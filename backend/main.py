@@ -91,6 +91,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.mount("/uploads", StaticFiles(directory=UPLOADS), name="uploads")
+app.mount("/complaint-files", StaticFiles(directory=COMPLAINT_UPLOADS), name="complaint-files")
 app.mount("/demo", StaticFiles(directory=DEMO_DIR), name="demo")
 
 FIELDS = [
@@ -1946,6 +1947,20 @@ async def create_complaint(
         detected = "; ".join(v["title"] for v in scan["violations"][:5])
     ref = f"PC-{datetime.now().strftime('%Y%m%d')}-{secrets.token_hex(3).upper()}"
     stored = []
+    # Automatically preserve the linked inspection image as evidence for one-click complaints.
+    if scan and scan.get("image_url"):
+        raw_image = str(scan["image_url"]).lstrip("/")
+        if raw_image.startswith("demo/"):
+            source = DEMO_DIR / raw_image.split("/", 1)[1]
+        elif raw_image.startswith("uploads/"):
+            source = UPLOADS / raw_image.split("/", 1)[1]
+        else:
+            source = BASE / raw_image
+        if source.exists() and source.is_file():
+            ext = source.suffix.lower() or ".bin"
+            target = COMPLAINT_UPLOADS / f"{ref}-inspection-evidence{ext}"
+            target.write_bytes(source.read_bytes())
+            stored.append(target.name)
     for f in files[:6]:
         if not f.filename: continue
         content = await f.read()
